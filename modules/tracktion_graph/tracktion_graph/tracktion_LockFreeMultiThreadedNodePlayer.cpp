@@ -405,6 +405,17 @@ Node* LockFreeMultiThreadedNodePlayer::updateProcessQueueForNode (PreparedNode& 
             {
                 preparedNode.nodesReadyToBeProcessed->try_enqueue (&outputPlaybackNode->node);
                 numNodesQueued.fetch_add (1, std::memory_order_acq_rel);
+                // LAMA-PATCH: signal on PRODUCE. The ready-work FIFO distributes nodes to any awake worker,
+                // but the blocking pools (semaphore / conditionVariable / hybrid) only ever get signalled once
+                // per block, for the initial leaves in resetProcessQueue -- new ready work produced mid-block
+                // here was enqueued but never signalled. So a worker that parked when the FIFO briefly emptied
+                // at a converge/pinch is never re-woken, and the parallel work that fans out AFTER the pinch
+                // (deep independent branches) runs serially on whichever thread stayed awake. Reposting the
+                // pool per extra ready output completes the standard produce/consume semaphore contract: a
+                // parked worker rejoins for work that is already ready and already in the queue. It cannot
+                // reorder data or run a node before its inputs (numInputsToBeProcessed is untouched); it only
+                // fixes a false-park race. No-op for the realTime pool (its signal is empty; it never parks).
+                threadPool->signalOne();
             }
            #else
             // If there is only one Node or we're at the last Node we can return this to be processed by the same thread
@@ -414,6 +425,7 @@ Node* LockFreeMultiThreadedNodePlayer::updateProcessQueueForNode (PreparedNode& 
 
             preparedNode.nodesReadyToBeProcessed->try_enqueue (&outputPlaybackNode->node);
             numNodesQueued.fetch_add (1, std::memory_order_acq_rel);
+            threadPool->signalOne(); // LAMA-PATCH: signal on produce (see note in the RETURN_MID_NODES branch)
            #endif
         }
     }
