@@ -25,4 +25,11 @@ bool setThreadPriority (std::thread&, int priority);
 /** Tries to upgrade the current thread to realtime priority. */
 bool tryToUpgradeCurrentThreadToRealtime (const juce::Thread::RealtimeOptions&);
 
+/** LAMA-PATCH: registers the CALLING thread with the Windows MMCSS "Pro Audio" task and returns an opaque
+    handle (nullptr on failure). Pass that handle to leaveProAudioMmcss() before the thread exits. Both are
+    no-ops returning/ignoring nullptr on non-Windows. Kept here so the Win32/avrt.h include stays out of the
+    node-player thread-pool translation unit. */
+void* enterProAudioMmcss();
+void  leaveProAudioMmcss (void* handle);
+
 }} // namespace tracktion_engine

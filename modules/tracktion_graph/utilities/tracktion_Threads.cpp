@@ -12,6 +12,8 @@
 
 #ifdef _WIN32
  #include <windows.h>
+ #include <avrt.h>
+ #pragma comment (lib, "avrt.lib")
 #endif
 
 namespace tracktion { inline namespace graph
@@ -118,5 +120,28 @@ bool setThreadPriority (std::thread& t, int priority)
 {
     return setThreadPriority (t.native_handle(), priority);
 }
+
+// LAMA-PATCH: MMCSS "Pro Audio" registration for the calling (worker) thread. See the header for rationale.
+#ifdef _WIN32
+void* enterProAudioMmcss()
+{
+    DWORD taskIndex = 0;
+    auto handle = AvSetMmThreadCharacteristicsW (L"Pro Audio", &taskIndex);
+
+    if (handle != nullptr)
+        AvSetMmThreadPriority (handle, AVRT_PRIORITY_CRITICAL);
+
+    return handle; // HANDLE (a void*); nullptr on failure
+}
+
+void leaveProAudioMmcss (void* handle)
+{
+    if (handle != nullptr)
+        AvRevertMmThreadCharacteristics (static_cast<HANDLE> (handle));
+}
+#else
+void* enterProAudioMmcss()          { return nullptr; }
+void  leaveProAudioMmcss (void*)    {}
+#endif
 
 }} // namespace tracktion_engine

@@ -29,6 +29,25 @@ namespace
         tracktion::core::pause();
         tracktion::core::pause();
     }
+
+    // LAMA-PATCH: register the calling worker with the Windows Multimedia Class Scheduler Service (MMCSS)
+    // "Pro Audio" task. tracktion already raises the pool workers to THREAD_PRIORITY_TIME_CRITICAL, but on
+    // Windows tryToUpgradeCurrentThreadToRealtime() is a no-op (implemented only for macOS) and is invoked on
+    // the CREATING thread, not the worker -- so the workers get no MMCSS. MMCSS lets the multimedia scheduler
+    // treat the thread as glitch-sensitive audio work and preempt it far less than a plain time-critical
+    // thread, which shrinks the worst-case per-block tail (jitter) on the parallel DSP graph. RAII so the
+    // characteristics are reverted when the worker exits. The Win32/avrt calls live in tracktion_Threads.cpp
+    // (which already includes <windows.h>) to keep windows.h out of this TU; both are no-ops on non-Windows
+    // (macOS uses the audio workgroup / time-constraint policy; Linux uses SCHED_RR via setThreadPriority).
+    struct ScopedProAudioThread
+    {
+        ScopedProAudioThread()                          : handle (enterProAudioMmcss()) {}
+        ~ScopedProAudioThread()                         { leaveProAudioMmcss (handle); }
+        ScopedProAudioThread (const ScopedProAudioThread&) = delete;
+        ScopedProAudioThread& operator= (const ScopedProAudioThread&) = delete;
+
+        void* handle = nullptr;
+    };
 }
 
 
@@ -155,6 +174,8 @@ private:
         juce::WorkgroupToken token;
         workgroup.join (token);
 
+        const ScopedProAudioThread proAudio; // LAMA-PATCH: MMCSS "Pro Audio" (Windows) — shrinks jitter tail
+
         for (;;)
         {
             if (shouldExit())
@@ -258,6 +279,8 @@ private:
     {
         juce::WorkgroupToken token;
         workgroup.join (token);
+
+        const ScopedProAudioThread proAudio; // LAMA-PATCH: MMCSS "Pro Audio" (Windows) — shrinks jitter tail
 
         for (;;)
         {
@@ -419,6 +442,8 @@ private:
         juce::WorkgroupToken token;
         workgroup.join (token);
 
+        const ScopedProAudioThread proAudio; // LAMA-PATCH: MMCSS "Pro Audio" (Windows) — shrinks jitter tail
+
         for (;;)
         {
             if (shouldExit())
@@ -525,6 +550,8 @@ private:
     {
         juce::WorkgroupToken token;
         workgroup.join (token);
+
+        const ScopedProAudioThread proAudio; // LAMA-PATCH: MMCSS "Pro Audio" (Windows) — shrinks jitter tail
 
         for (;;)
         {
@@ -657,7 +684,9 @@ private:
     {
         juce::WorkgroupToken token;
         workgroup.join (token);
-        
+
+        const ScopedProAudioThread proAudio; // LAMA-PATCH: MMCSS "Pro Audio" (Windows) — shrinks jitter tail
+
         juce::FloatVectorOperations::disableDenormalisedNumberSupport();
 
         for (;;)
