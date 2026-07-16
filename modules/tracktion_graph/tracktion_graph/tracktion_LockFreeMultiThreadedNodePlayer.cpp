@@ -415,6 +415,14 @@ Node* LockFreeMultiThreadedNodePlayer::updateProcessQueueForNode (PreparedNode& 
                 // parked worker rejoins for work that is already ready and already in the queue. It cannot
                 // reorder data or run a node before its inputs (numInputsToBeProcessed is untouched); it only
                 // fixes a false-park race. No-op for the realTime pool (its signal is empty; it never parks).
+                //
+                // CONSIDERED: this call site also runs on the audio thread (which participates via
+                // processNextFreeNode), and signalOne() takes a std::mutex on the conditionVariable/hybrid
+                // pools. That tradeoff is pre-existing and inherent to those pools, not introduced here:
+                // resetProcessQueue already signals them from the audio thread on every block, and the
+                // critical section is a single flag store. The semaphore pools (including the default
+                // lightweightSemaphore) signal with an atomic increment and only touch the OS semaphore
+                // when a waiter actually exists, so the audio thread stays lock-free with those.
                 threadPool->signalOne();
             }
            #else
